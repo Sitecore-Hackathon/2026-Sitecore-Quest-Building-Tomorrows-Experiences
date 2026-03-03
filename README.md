@@ -7,3 +7,9 @@
 ### ⟹ [Insert your documentation here](ENTRYFORM.md) <<
 
 Team Name: Sitecore-Quest-Building-Tomorrows-Experiences
+
+Team Members:
+
+ Yamini Punyavathi Muttevi 
+ Krushna Patel
+ Dennis Lee
