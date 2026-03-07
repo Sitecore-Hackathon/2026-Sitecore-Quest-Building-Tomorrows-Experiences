@@ -11,6 +11,18 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.sitecorecontenthub.cloud" },
     ],
   },
+  async headers() {
+    return [
+      {
+        // Allow Sitecore to embed this app in an iframe
+        source: "/(.*)",
+        headers: [
+          { key: "X-Frame-Options", value: "ALLOWALL" },
+          { key: "Content-Security-Policy", value: "frame-ancestors *;" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
