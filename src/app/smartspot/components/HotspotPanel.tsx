@@ -93,7 +93,7 @@ export function HotspotPanel({
         </TabsList>
 
         {/* Hotspots tab */}
-        <TabsContent value="hotspots" className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
+        <TabsContent forceMount value="hotspots" className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
           {hotspots.length === 0 ? (
             <p className="text-muted-foreground text-xs text-center py-6 m-0">
               No hotspots yet — click the image to add one.
@@ -315,7 +315,7 @@ export function HotspotPanel({
         </TabsContent>
 
         {/* Brand Check tab */}
-        <TabsContent value="brand" className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+        <TabsContent forceMount value="brand" className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
           <p className="text-muted-foreground text-xs leading-relaxed m-0">
             Runs a brand compliance audit on all hotspot content — labels, descriptions, aria-labels, and copy quality.
           </p>
