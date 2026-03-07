@@ -88,7 +88,7 @@ export function HotspotPanel({
             )}
           </TabsTrigger>
           <TabsTrigger value="brand" variant="line" className="flex-1 rounded-none">
-            Brand Check
+            Quality Check
           </TabsTrigger>
         </TabsList>
 
@@ -297,7 +297,7 @@ export function HotspotPanel({
                   )}
                 >
                   <div className="flex justify-between items-center mb-1.5">
-                    <div className="text-2xs font-semibold text-muted-foreground">Brand Score</div>
+                    <div className="text-2xs font-semibold text-muted-foreground">Quality Score</div>
                     <Badge colorScheme={scoreColorScheme(selectedBrand.score)}>
                       {selectedBrand.score} / 100
                     </Badge>
@@ -315,9 +315,9 @@ export function HotspotPanel({
         </TabsContent>
 
         {/* Brand Check tab */}
-        <TabsContent forceMount value="brand" className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+        <TabsContent value="brand" className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
           <p className="text-muted-foreground text-xs leading-relaxed m-0">
-            Runs a brand compliance audit on all hotspot content — labels, descriptions, aria-labels, and copy quality.
+            Runs a quality audit on all hotspot content — labels, descriptions, aria-labels, and copy.
           </p>
           <Button
             onClick={onBrandCheckAll}
@@ -325,7 +325,7 @@ export function HotspotPanel({
             colorScheme="ai"
             className="w-full"
           >
-            {isBrandChecking ? "Checking…" : "✨ Run Brand Check"}
+            {isBrandChecking ? "Checking…" : "✨ Run Quality Check"}
           </Button>
           {brandCheckError && (
             <div className="text-destructive text-xs leading-tight">

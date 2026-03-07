@@ -97,8 +97,8 @@ export function HotspotCanvas({
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-[#1a1a2e] rounded-lg border-2 border-dashed border-[#333] text-[#555] text-sm gap-2.5 min-h-100">
         <div className="text-[40px]">🖼️</div>
-        <div className="font-semibold text-[#666]">No image loaded</div>
-        <div className="text-xs">Paste an image URL in the toolbar above</div>
+        <div className="font-semibold text-[#666]">No image selected</div>
+        <div className="text-xs">Select an image for the chosen device size to add hotspots</div>
       </div>
     );
   }

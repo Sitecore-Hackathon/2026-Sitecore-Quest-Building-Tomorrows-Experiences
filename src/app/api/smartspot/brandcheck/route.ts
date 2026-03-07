@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
 2. **Accessibility** — does it have an aria-label? Is the label unique among the set? Is copy screen-reader friendly?
 3. **Completeness** — does it have a label, description, and aria-label?
 4. **Clarity** — is the label concise and descriptive?
+5. **Link quality** — does it have a link? Is the link text descriptive and unique? Only evaluate if data is provided.
 ${brandSection}
 Hotspots to review:
 ${hotspotSummary}
