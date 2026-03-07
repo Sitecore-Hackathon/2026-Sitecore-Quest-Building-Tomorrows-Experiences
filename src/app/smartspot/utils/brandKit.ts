@@ -44,7 +44,8 @@ const FIELD_LABELS: Record<string, string> = {
  */
 export async function fetchBrandKit(
   client: ClientSDK,
-  brandKitId: string
+  brandKitId: string,
+  sitecoreContextId?: string
 ): Promise<BrandKitContext | null> {
   if (!brandKitId) return null;
 
@@ -55,10 +56,7 @@ export async function fetchBrandKit(
       item(where: { id: "${id}" }) {
         id
         name
-        fields {
-          name
-          value
-        }
+        fields { nodes { name value } }
       }
     }
   `;
@@ -68,6 +66,7 @@ export async function fetchBrandKit(
     result = await client.mutate("xmc.authoring.graphql", {
       params: {
         body: { query },
+        ...(sitecoreContextId ? { query: { sitecoreContextId } } : {}),
       },
     });
   } catch {
@@ -76,17 +75,17 @@ export async function fetchBrandKit(
 
   type RawItem = {
     name?: string;
-    fields?: { name: string; value: string }[];
+    fields?: { nodes?: { name: string; value: string }[] };
   };
 
-  const item = (result?.data as { item?: RawItem } | undefined)?.item;
+  const item = (result?.data as { data?: { item?: RawItem } } | undefined)?.data?.item;
   if (!item) return null;
 
   // Build a normalised key→value map, preserving original field name for labels
   const fields: Record<string, string> = {};
   const labelledLines: string[] = [];
 
-  for (const f of item.fields ?? []) {
+  for (const f of item.fields?.nodes ?? []) {
     const trimmed = f.value?.trim();
     if (!trimmed) continue;
 
