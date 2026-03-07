@@ -2,7 +2,7 @@ import type { ClientSDK } from "@sitecore-marketplace-sdk/client";
 import { Key } from "react";
 
 /**
- * Fetrch the Claude API key stored in site properties.
+ * Fetch the Claude API key stored in site properties.
  * Returns `null` when the key is missing or the query fails
  */
 export async function fetchClaudeApiKey(
@@ -10,7 +10,7 @@ export async function fetchClaudeApiKey(
   sitecoreContextId: string,
   site: string
 ): Promise<string | null> {
-  if (!site) return null;
+  if (!(site || sitecoreContextId)) return null;
 
   const keyName = "smartspot-claude-apikey";
 

@@ -10,22 +10,23 @@ export async function POST(req: NextRequest) {
 
   const anthropic = new Anthropic({ apiKey });
   
-  const { imageUrl } = (await req.json()) as { imageUrl: string };
+  const imageUrl = (await req.text()).trim();
 
   if (!imageUrl) {
     return NextResponse.json({ error: "imageUrl is required" }, { status: 400 });
   }
 
-  try {
-    const parsed = new URL(imageUrl);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return NextResponse.json({ error: "imageUrl must be an http/https URL" }, { status: 400 });
-    }
-  } catch {
-    return NextResponse.json({ error: "imageUrl is not a valid URL" }, { status: 400 });
+  function parseBase64ImageUrl(base64Url: string): { mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp"; data: string } {
+    const [metadata, data] = base64Url.split(",");
+    const mediaTypeRaw = metadata.split(":")[1].split(";")[0];
+    const validMediaTypes: ("image/jpeg" | "image/png" | "image/gif" | "image/webp")[] = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+    const mediaType = validMediaTypes.includes(mediaTypeRaw as any) ? (mediaTypeRaw as "image/jpeg" | "image/png" | "image/gif" | "image/webp") : "image/jpeg";
+
+    return { mediaType, data };
   }
 
   try {
+    const { mediaType, data } = parseBase64ImageUrl(imageUrl);
     const message = await anthropic.messages.create({
       model: "claude-opus-4-6",
       max_tokens: 1024,
@@ -35,11 +36,15 @@ export async function POST(req: NextRequest) {
           content: [
             {
               type: "image",
-              source: { type: "url", url: imageUrl },
+              source: { 
+                type: "base64", 
+                media_type: mediaType,
+                data: data
+              },
             },
             {
               type: "text",
-              text: `Analyze this image and identify 3–5 visually distinct points of interest that would work well as interactive hotspots (e.g. products, features, people, locations, UI elements).
+              text: `Analyze this image and identify 3–7 visually distinct points of interest that would work well as interactive hotspots (e.g. products, features, people, locations, UI elements).
 
 For each point return:
 - x: horizontal position as a percentage (0 = left edge, 100 = right edge)
