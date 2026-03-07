@@ -46,6 +46,7 @@ export default function SmartSpotPage() {
   const [isBrandChecking, setIsBrandChecking] = useState(false);
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
   const [autoDetectError, setAutoDetectError] = useState<string | null>(null);
+  const [autoDetectCount, setAutoDetectCount] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // ── SDK initialisation — mirrors the pattern used across all starter examples ──
@@ -187,6 +188,7 @@ export default function SmartSpotPage() {
     if (!imageUrl) return;
     setIsAutoDetecting(true);
     setAutoDetectError(null);
+    setAutoDetectCount(null);
     try {
       const res = await fetch("/api/smartspot/vision", {
         method: "POST",
@@ -206,6 +208,7 @@ export default function SmartSpotPage() {
         ariaLabel: s.label,
       }));
       setHotspots((prev) => [...prev, ...newSpots]);
+      setAutoDetectCount(newSpots.length);
       if (newSpots.length > 0) setSelectedId(newSpots[0].id);
     } catch (err) {
       setAutoDetectError(err instanceof Error ? err.message : "Auto-detect failed");
@@ -265,7 +268,7 @@ export default function SmartSpotPage() {
           <div className="text-2xl">🎯</div>
           <div>
             <div className="font-bold text-sm tracking-tight">SmartSpot</div>
-            <div className="text-muted-foreground text-[10px] tracking-wide">AI Hotspot Editor</div>
+            <div className="text-muted-foreground text- tracking-wide">AI Hotspot Editor</div>
           </div>
         </div>
 
@@ -278,19 +281,27 @@ export default function SmartSpotPage() {
         />
 
         {/* Auto-detect */}
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 shrink-0">
           <Button
             onClick={handleAutoDetect}
             disabled={isAutoDetecting || !imageUrl}
             colorScheme="ai"
             size="sm"
             title="Use Claude Vision to auto-place hotspots"
+            className="whitespace-nowrap"
           >
             {isAutoDetecting ? "Detecting…" : "🔍 Auto-Detect"}
           </Button>
           {autoDetectError && (
-            <div className="text-destructive text-[10px] max-w-36 leading-tight">
+            <div className="text-destructive text-3xs max-w-36 leading-tight">
               {autoDetectError}
+            </div>
+          )}
+          {!autoDetectError && autoDetectCount !== null && (
+            <div className="text-3xs max-w-36 leading-tight text-green-600 font-medium">
+              {autoDetectCount === 0
+                ? "No hotspots found"
+                : `${autoDetectCount} hotspot${autoDetectCount === 1 ? "" : "s"} detected`}
             </div>
           )}
         </div>
