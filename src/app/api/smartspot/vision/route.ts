@@ -5,13 +5,23 @@ import { AIDetectedSpot } from "@/src/app/smartspot/types";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: "AI not configured" }, { status: 503 });
+  }
+
   const { imageUrl } = (await req.json()) as { imageUrl: string };
 
   if (!imageUrl) {
-    return NextResponse.json(
-      { error: "imageUrl is required" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "imageUrl is required" }, { status: 400 });
+  }
+
+  try {
+    const parsed = new URL(imageUrl);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return NextResponse.json({ error: "imageUrl must be an http/https URL" }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "imageUrl is not a valid URL" }, { status: 400 });
   }
 
   try {

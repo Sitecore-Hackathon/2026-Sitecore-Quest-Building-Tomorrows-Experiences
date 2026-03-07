@@ -54,7 +54,7 @@ const buttonVariants = cva(
       },
       colorScheme: {
         primary: "",
-        ai: "bg-[length:250%_100%] !bg-transparent",
+        ai: "bg-[length:250%_100%]",
         danger: "",
         success: "",
         neutral: "",

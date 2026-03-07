@@ -19,9 +19,17 @@ export interface Hotspot {
   ariaLabel: string;
 }
 
-export interface SmartSpotData {
+export type Breakpoint = "desktop" | "tablet" | "mobile";
+
+export interface ImageVariant {
   imageUrl: string;
   hotspots: Hotspot[];
+}
+
+export interface SmartSpotData {
+  /** Schema version — increment when the shape changes to enable migration */
+  version: 1;
+  variants: Partial<Record<Breakpoint, ImageVariant>>;
 }
 
 export interface BrandCheckResult {

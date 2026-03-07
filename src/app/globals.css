@@ -689,3 +689,14 @@
     --shadow-inset: inset 0 2px 4px 0 rgba(255, 255, 255, 0.06);
     --shadow-elevated: rgba(255, 255, 255, 0.1) 0px 0px 0px 1px, rgba(255, 255, 255, 0.2) 0px 5px 10px, rgba(255, 255, 255, 0.4) 0px 15px 40px;
 }
+
+/* ── AI gradient button utilities ───────────────────────────────────────── */
+@utility ai-500 {
+  background: linear-gradient(135deg, #6e3fff 0%, #3b82f6 100%);
+}
+@utility ai-600 {
+  background: linear-gradient(135deg, #5319e0 0%, #2563eb 100%);
+}
+@utility ai-700 {
+  background: linear-gradient(135deg, #4715af 0%, #1d4ed8 100%);
+}

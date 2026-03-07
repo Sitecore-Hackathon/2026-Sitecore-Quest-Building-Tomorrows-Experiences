@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { Hotspot, BrandCheckResult, IconStyle } from "../types";
 import { Button } from "@/src/components/ui/button";
@@ -40,7 +38,9 @@ interface HotspotPanelProps {
   selectedId: string | null;
   brandCheckResults: BrandCheckResult[];
   isGenerating: boolean;
+  generateError: string | null;
   isBrandChecking: boolean;
+  brandCheckError: string | null;
   onUpdate: (id: string, updates: Partial<Hotspot>) => void;
   onDelete: (id: string) => void;
   onSelect: (id: string | null) => void;
@@ -53,7 +53,9 @@ export function HotspotPanel({
   selectedId,
   brandCheckResults,
   isGenerating,
+  generateError,
   isBrandChecking,
+  brandCheckError,
   onUpdate,
   onDelete,
   onSelect,
@@ -66,7 +68,7 @@ export function HotspotPanel({
   const selectedBrand = brandCheckResults.find((r) => r.hotspotId === selectedId) ?? null;
 
   return (
-    <div className="w-[300px] shrink-0 flex flex-col bg-card rounded-lg border border-border overflow-hidden">
+    <div className="w-75 shrink-0 flex flex-col bg-card rounded-lg border border-border overflow-hidden">
       <Tabs
         value={activeTab}
         onValueChange={(v) => setActiveTab(v as "hotspots" | "brand")}
@@ -91,7 +93,7 @@ export function HotspotPanel({
         </TabsList>
 
         {/* Hotspots tab */}
-        <TabsContent value="hotspots" className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
+        <TabsContent forceMount value="hotspots" className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
           {hotspots.length === 0 ? (
             <p className="text-muted-foreground text-xs text-center py-6 m-0">
               No hotspots yet — click the image to add one.
@@ -113,7 +115,7 @@ export function HotspotPanel({
                     )}
                   >
                     <div
-                      className="w-[22px] h-[22px] shrink-0 flex items-center justify-center text-white text-[10px] font-bold rounded-full"
+                      className="w-5.5 h-5.5 shrink-0 flex items-center justify-center text-white text-3xs font-bold rounded-full"
                       style={{ background: h.color }}
                     >
                       {h.iconStyle === "info" ? "i" : h.iconStyle === "plus" ? "+" : h.iconStyle === "star" ? "★" : "●"}
@@ -122,7 +124,7 @@ export function HotspotPanel({
                       <div className="text-xs font-semibold truncate text-foreground">
                         {h.label || "Untitled"}
                       </div>
-                      <div className="text-[10px] text-muted-foreground">
+                      <div className="text-3xs text-muted-foreground">
                         {Math.round(h.x)}%, {Math.round(h.y)}%
                       </div>
                     </div>
@@ -153,7 +155,7 @@ export function HotspotPanel({
           {/* Editor for selected hotspot */}
           {selected && (
             <div className="border-t border-border pt-3 flex flex-col gap-2.5">
-              <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
+              <div className="text-2xs font-bold text-muted-foreground uppercase tracking-widest">
                 Edit Hotspot
               </div>
 
@@ -200,6 +202,11 @@ export function HotspotPanel({
                   >
                     {isGenerating ? "…" : "✨ AI"}
                   </Button>
+                  {generateError && (
+                    <div className="absolute top-full left-0 right-0 mt-1 text-3xs text-destructive leading-tight">
+                      ⚠ {generateError}
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -259,7 +266,7 @@ export function HotspotPanel({
                       key={color}
                       onClick={() => onUpdate(selected.id, { color })}
                       title={color}
-                      className="w-[22px] h-[22px] rounded-full cursor-pointer p-0 transition-transform hover:scale-110 outline-offset-2"
+                      className="w-5.5 h-5.5 rounded-full cursor-pointer p-0 transition-transform hover:scale-110 outline-offset-2"
                       style={{
                         background: color,
                         border: selected.color === color ? "3px solid white" : "2px solid transparent",
@@ -272,7 +279,7 @@ export function HotspotPanel({
                     value={selected.color}
                     onChange={(e) => onUpdate(selected.id, { color: e.target.value })}
                     title="Custom color"
-                    className="w-[22px] h-[22px] rounded-full cursor-pointer bg-transparent border border-gray-300 p-0"
+                    className="w-5.5 h-5.5 rounded-full cursor-pointer bg-transparent border border-gray-300 p-0"
                   />
                 </div>
               </div>
@@ -290,7 +297,7 @@ export function HotspotPanel({
                   )}
                 >
                   <div className="flex justify-between items-center mb-1.5">
-                    <div className="text-[11px] font-semibold text-muted-foreground">Brand Score</div>
+                    <div className="text-2xs font-semibold text-muted-foreground">Brand Score</div>
                     <Badge colorScheme={scoreColorScheme(selectedBrand.score)}>
                       {selectedBrand.score} / 100
                     </Badge>
@@ -308,7 +315,7 @@ export function HotspotPanel({
         </TabsContent>
 
         {/* Brand Check tab */}
-        <TabsContent value="brand" className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+        <TabsContent forceMount value="brand" className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
           <p className="text-muted-foreground text-xs leading-relaxed m-0">
             Runs a brand compliance audit on all hotspot content — labels, descriptions, aria-labels, and copy quality.
           </p>
@@ -320,6 +327,11 @@ export function HotspotPanel({
           >
             {isBrandChecking ? "Checking…" : "✨ Run Brand Check"}
           </Button>
+          {brandCheckError && (
+            <div className="text-destructive text-xs leading-tight">
+              ⚠ {brandCheckError}
+            </div>
+          )}
 
           {brandCheckResults.length > 0 && (
             <div className="flex flex-col gap-2">
