@@ -7,7 +7,7 @@ import { Hotspot, SmartSpotData, BrandCheckResult, AIDetectedSpot, Breakpoint, I
 import { HotspotCanvas } from "./components/HotspotCanvas";
 import { HotspotPanel } from "./components/HotspotPanel";
 import { fetchBrandKit, BrandKitContext } from "./utils/brandKit";
-import { resolveDatasourcesFromPresentationDetails, fetchDatasourceImagesViaAuthoring } from "./utils/fetchPageImages";
+import { fetchClaudeApiKey } from "./utils/claudeApiKey";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 
@@ -53,23 +53,19 @@ const emptyVariants = (): Record<Breakpoint, ImageVariant> => ({
 export default function SmartSpotPage() {
   const { client, isInitialized, isLoading: sdkLoading, error } = useMarketplaceClient(MARKETPLACE_OPTIONS);
   const [appContext, setAppContext] = useState<ApplicationContext>();
-  const [pagesCtx, setPagesCtx] = useState<PagesContext | null>(null);
+  const [pagesContext, setPagesContext] = useState<PagesContext>();
   const [brandKit, setBrandKit] = useState<BrandKitContext | null>(null);
+  const [claudeApiKey, setClaudeApiKey] = useState<string>("");
+  const [isApiKeyLoading, setIsApiKeyLoading] = useState<boolean>(true);
 
   const [activeBreakpoint, setActiveBreakpoint] = useState<Breakpoint>("desktop");
   const [variants, setVariants] = useState<Record<Breakpoint, ImageVariant>>(emptyVariants());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [brandCheckResults, setBrandCheckResults] = useState<BrandCheckResult[]>([]);
-  // In-memory blob URLs keyed by breakpoint — created from server-proxied image bytes.
-  // Not persisted to Sitecore; revoked when replaced or on unmount.
-  const [imageBlobUrls, setImageBlobUrls] = useState<Partial<Record<Breakpoint, string>>>({});
-  const blobUrlsRef = useRef<Partial<Record<Breakpoint, string>>>({});
 
   // Derived from active breakpoint
   const imageUrl = variants[activeBreakpoint].imageUrl;
   const hotspots = variants[activeBreakpoint].hotspots;
-  // Canvas displays the in-memory blob if available, otherwise falls back to the real URL.
-  const canvasImageUrl = imageBlobUrls[activeBreakpoint] || imageUrl;
 
   const setImageUrl = useCallback((url: string) =>
     setVariants((prev) => ({
@@ -87,8 +83,6 @@ export default function SmartSpotPage() {
     [activeBreakpoint]
   );
 
-  const [isLoadingImages, setIsLoadingImages] = useState(false);
-  const [loadImagesError, setLoadImagesError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [isBrandChecking, setIsBrandChecking] = useState(false);
@@ -101,16 +95,7 @@ export default function SmartSpotPage() {
   // ── SDK initialisation — mirrors the pattern used across all starter examples ──
   const unsubPagesContext = useRef<(() => void) | undefined>(undefined);
   const isMounted = useRef(true);
-  // Stores appContext.resourceAccess[0].context.preview so that async
-  // callbacks (resolvePagesCtx) can read it without stale-closure issues.
-  const sitecoreContextIdRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    return () => {
-      isMounted.current = false;
-      // Revoke all blob URLs on unmount to free memory
-      Object.values(blobUrlsRef.current).forEach((u) => u && URL.revokeObjectURL(u));
-    };
-  }, []);
+  useEffect(() => { return () => { isMounted.current = false; }; }, []);
 
   useEffect(() => {
     if (!error && isInitialized && client) {
@@ -140,22 +125,20 @@ export default function SmartSpotPage() {
         .query("application.context")
         .then((res) => {
           const ctx = res.data as ApplicationContext;
+          if (ctx.type && ctx.type !== "custom-field-extension") {
+            console.warn(`SmartSpot: unexpected extension type "${ctx.type}" — expected "custom-field-extension"`);
+          }
           setAppContext(ctx);
-          // Cache the preview context ID so async callbacks can use it
-          sitecoreContextIdRef.current =
-            (ctx.resourceAccess as { context?: { preview?: string } }[] | undefined)
-              ?.[0]?.context?.preview ?? undefined;
         })
         .catch((err) => console.error("Error retrieving application.context:", err));
 
       // Subscribe to pages.context so the brand kit refreshes if the author
       // switches page while the extension is open
-      const resolvePagesCtx = async (data: unknown) => {
-        const ctx = data as PagesContext;
-        setPagesCtx(ctx);
-        const brandKitId = ctx?.siteInfo?.brandKitId;
+      const resolveBrandKit = async (data: unknown) => {
+        const brandKitId = (data as { siteInfo?: { brandKitId?: string } })
+          ?.siteInfo?.brandKitId;
         if (brandKitId) {
-          const kit = await fetchBrandKit(client, brandKitId, sitecoreContextIdRef.current);
+          const kit = await fetchBrandKit(client, brandKitId);
           setBrandKit(kit);
         }
       };
@@ -164,12 +147,15 @@ export default function SmartSpotPage() {
         .query("pages.context", {
           subscribe: true,
           onSuccess: (data) => {
-            resolvePagesCtx(data).catch(() => {});
+            resolveBrandKit(data).catch(() => {});
           },
         })
         .then((result) => {
+          const ctx = result.data as PagesContext;
+          setPagesContext(ctx);
+
           unsubPagesContext.current = result.unsubscribe;
-          resolvePagesCtx(result.data).catch(() => {});
+          resolveBrandKit(result.data).catch(() => {});
         })
         .catch((err) => console.error("Error retrieving pages.context:", err));
     } else if (error) {
@@ -180,6 +166,28 @@ export default function SmartSpotPage() {
       unsubPagesContext.current?.();
     };
   }, [client, error, isInitialized]);
+
+  // Claude API key effect
+  useEffect(() => {
+    if (appContext && pagesContext && client) {
+      const site = pagesContext.siteInfo?.name;
+      const sitecoreContextId = appContext.resourceAccess?.[0]?.context.preview;
+
+      if (site && sitecoreContextId) {
+        fetchClaudeApiKey(client, sitecoreContextId, site)
+          .then((key) => {
+            setClaudeApiKey(key ?? ""); 
+            setIsApiKeyLoading(false);
+          })
+          .catch(() => {
+            setClaudeApiKey("");
+            setIsApiKeyLoading(false);
+          });
+      } else {
+        setIsApiKeyLoading(false);
+      }
+    }
+  }, [appContext, pagesContext, client]);
 
   // ── Hotspot mutations ──────────────────────────────────────────────────────
   const handleAdd = useCallback((x: number, y: number) => {
@@ -217,7 +225,10 @@ export default function SmartSpotPage() {
       try {
         const res = await fetch("/api/smartspot/generate", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json", 
+            "X-Claude-Api-Key": claudeApiKey 
+          },
           body: JSON.stringify({
             label: spot.label,
             context: appContext?.name ?? "",
@@ -247,7 +258,10 @@ export default function SmartSpotPage() {
     try {
       const res = await fetch("/api/smartspot/brandcheck", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Claude-Api-Key": claudeApiKey,
+        },
         body: JSON.stringify({ hotspots, brandContext: brandKit?.summary ?? "" }),
       });
       const data = await res.json();
@@ -272,8 +286,11 @@ export default function SmartSpotPage() {
     try {
       const res = await fetch("/api/smartspot/vision", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, sitecoreContextId: sitecoreContextIdRef.current }),
+        headers: { 
+          "Content-Type": "application/json", 
+          "X-Claude-Api-Key": claudeApiKey 
+        },
+        body: JSON.stringify({ imageUrl }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -315,123 +332,6 @@ export default function SmartSpotPage() {
     }
   }, [client, variants]);
 
-  // ── Load images from page datasource ──────────────────────────────────────
-  const handleLoadImages = useCallback(async () => {
-    if (!client) return;
-
-    const pageInfo = (pagesCtx as unknown as {
-      pageInfo?: { id?: string; path?: string; presentationDetails?: string };
-    })?.pageInfo;
-
-    const datasourcePaths = pageInfo?.presentationDetails
-      ? resolveDatasourcesFromPresentationDetails(
-          pageInfo.presentationDetails,
-          pageInfo.path ?? ""
-        )
-      : [];
-
-    if (!datasourcePaths.length) {
-      setLoadImagesError("No datasource found — make sure the Image Hotspots component is on this page");
-      return;
-    }
-
-    const language = (pagesCtx?.pageInfo as unknown as { language?: string })?.language ?? "en";
-    const siteInfo = (pagesCtx as unknown as {
-      siteInfo?: { renderingEngineApplicationUrl?: string; hostName?: string };
-    })?.siteInfo;
-    const instanceUrl = siteInfo?.renderingEngineApplicationUrl ?? appContext?.url ?? "";
-    // Resolve the best media base URL (used to build /-/media/{guid}.ashx paths).
-    // Priority:
-    //   1. NEXT_PUBLIC_MEDIA_BASE env var  — explicit override for local dev
-    //   2. siteInfo.hostName              — set by Pages SDK in some versions
-    //   3. appContext.url origin           — correct in deployed XM Cloud (not localhost)
-    //   4. instanceUrl (EH host)           — last resort; requires SITECORE_API_KEY
-    const appOrigin = (() => { try { return new URL(appContext?.url ?? "").origin; } catch { return ""; } })();
-    const mediaBase: string =
-      (process.env.NEXT_PUBLIC_MEDIA_BASE as string | undefined) ||
-      (siteInfo?.hostName ? `https://${siteInfo.hostName}` : "") ||
-      (!appOrigin.includes("localhost") && !appOrigin.includes("127.0.0.1") ? appOrigin : "") ||
-      instanceUrl;
-    const sitecoreContextId =
-      (appContext?.resourceAccess as { context?: { preview?: string } }[] | undefined)
-        ?.[0]?.context?.preview ?? undefined;
-
-    setIsLoadingImages(true);
-    setLoadImagesError(null);
-    try {
-      // ── Step 1: Try Experience Edge (returns public CDN src URLs, no auth needed) ──
-      let data: { desktop?: string; tablet?: string; mobile?: string } | null = null;
-      try {
-        const edgeRes = await fetch("/api/smartspot/loadimages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            datasourcePath: datasourcePaths[0],
-            language,
-            previewContextId: sitecoreContextId,
-            instanceUrl,
-            mediaBaseUrl: mediaBase,
-          }),
-        });
-        if (edgeRes.ok) {
-          const edgeData = await edgeRes.json() as { desktop?: string; tablet?: string; mobile?: string };
-          if (edgeData.desktop || edgeData.tablet || edgeData.mobile) {
-            data = edgeData;
-          }
-        }
-      } catch { /* fall through to authoring API */ }
-
-      // ── Step 2: Fall back to Authoring GQL (works on unpublished content) ──
-      if (!data) {
-        data = await fetchDatasourceImagesViaAuthoring(
-          client, datasourcePaths[0], language, mediaBase, sitecoreContextId
-        );
-      }
-
-      if (!data) {
-        setLoadImagesError("Item not found — publish the datasource or check the component is on this page");
-        return;
-      }
-      setVariants((prev) => ({
-        desktop: data!.desktop ? { ...prev.desktop, imageUrl: data!.desktop! } : prev.desktop,
-        tablet:  data!.tablet  ? { ...prev.tablet,  imageUrl: data!.tablet!  } : prev.tablet,
-        mobile:  data!.mobile  ? { ...prev.mobile,  imageUrl: data!.mobile!  } : prev.mobile,
-      }));
-
-      // ── Step 3: Fetch each image server-side and store as in-memory blob URL ──
-      // This avoids mixed-content and auth issues in the canvas <img> tag.
-      const bpEntries = (
-        [["desktop", data!.desktop], ["tablet", data!.tablet], ["mobile", data!.mobile]] as
-        [Breakpoint, string | undefined][]
-      ).filter(([, url]) => !!url);
-
-      const newBlobs: Partial<Record<Breakpoint, string>> = {};
-      await Promise.all(
-        bpEntries.map(async ([bp, url]) => {
-          try {
-            const res = await fetch(`/api/smartspot/proxy-image?url=${encodeURIComponent(url!)}`);
-            if (!res.ok) return;
-            const blob = await res.blob();
-            if (!blob.type.startsWith("image/")) return;
-            // Revoke old blob URL for this breakpoint
-            const old = blobUrlsRef.current[bp];
-            if (old) URL.revokeObjectURL(old);
-            const blobUrl = URL.createObjectURL(blob);
-            blobUrlsRef.current[bp] = blobUrl;
-            newBlobs[bp] = blobUrl;
-          } catch { /* proxy failed — canvas will fall back to direct URL */ }
-        })
-      );
-      if (Object.keys(newBlobs).length > 0) {
-        setImageBlobUrls((prev) => ({ ...prev, ...newBlobs }));
-      }
-    } catch (err) {
-      setLoadImagesError(err instanceof Error ? err.message : "Failed to load images");
-    } finally {
-      setIsLoadingImages(false);
-    }
-  }, [client, pagesCtx, appContext, setVariants]);
-
   // ── Accessibility stats ────────────────────────────────────────────────────
   const withAriaLabel = hotspots.filter((h) => h.ariaLabel.trim()).length;
   const withDescription = hotspots.filter((h) => h.description.trim()).length;
@@ -443,12 +343,29 @@ export default function SmartSpotPage() {
         )
       : null;
 
-  if (sdkLoading) {
+  if (sdkLoading || isApiKeyLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-muted-foreground text-sm gap-1">
         <div className="text-4xl">🎯</div>
         <div className="font-semibold text-foreground">SmartSpot</div>
         <div>Initializing…</div>
+      </div>
+    );
+  }
+
+  if (!claudeApiKey) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-3.5 font-sans">
+        <div className="bg-card rounded-lg border border-destructive/20 p-6 max-w-md text-center">
+          <div className="text-4xl mb-3">⚠️</div>
+          <div className="text-lg font-bold text-destructive mb-2">Claude API Key Not Found</div>
+          <div className="text-sm text-muted-foreground mb-4">
+            The Claude API key could not be retrieved from site configuration. Please ensure the SmartSpot configuration includes a valid API key.
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Contact your site administrator if you believe this is an error.
+          </div>
+        </div>
       </div>
     );
   }
@@ -482,27 +399,6 @@ export default function SmartSpotPage() {
             <option key={key} value={key}>{icon} {label}</option>
           ))}
         </select>
-
-        {/* Load images from Sitecore datasource */}
-        {isInitialized && (
-          <div className="flex flex-col gap-1 shrink-0">
-            <Button
-              onClick={handleLoadImages}
-              disabled={isLoadingImages || !pagesCtx}
-              colorScheme="neutral"
-              size="sm"
-              title="Load DesktopImage / TabletImage / MobileImage from the page's ImageHotspots datasource"
-              className="whitespace-nowrap"
-            >
-              {isLoadingImages ? "Loading…" : "📂 Load from page"}
-            </Button>
-            {loadImagesError && (
-              <div className="text-destructive text-3xs max-w-44 leading-tight">
-                {loadImagesError}
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Image URL for active breakpoint */}
         <Input
@@ -560,7 +456,7 @@ export default function SmartSpotPage() {
       {/* ── Main canvas + panel ──────────────────────────────────────── */}
       <div className="flex gap-2.5 flex-1 min-h-0 items-start">
         <HotspotCanvas
-          imageUrl={canvasImageUrl}
+          imageUrl={imageUrl}
           hotspots={hotspots}
           selectedId={selectedId}
           onAdd={handleAdd}

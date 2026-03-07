@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { Hotspot, BrandCheckResult } from "@/src/app/smartspot/types";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
 export async function POST(req: NextRequest) {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: "AI not configured" }, { status: 503 });
+  const apiKey = req.headers.get("X-Claude-Api-Key");
+  if (!apiKey) {
+    return NextResponse.json({ error: "Claude API key not provided" }, { status: 400 });
   }
+
+  const anthropic = new Anthropic({ apiKey });
 
   const { hotspots, brandContext } = (await req.json()) as {
     hotspots: Hotspot[];
