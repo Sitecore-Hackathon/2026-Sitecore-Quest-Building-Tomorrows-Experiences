@@ -44,9 +44,15 @@ async function getMarketplaceClient() {
     return client;
   }
 
+  // Outside a Sitecore iframe the handshake will never complete — the SDK
+  // retries 5 times × 2 s = 10 s before throwing. Fail fast instead.
+  if (window === window.parent) {
+    throw new Error("Not running inside a Sitecore iframe (dev mode)");
+  }
+
   const config = {
     target: window.parent,
-     modules: [XMC],
+    modules: [XMC],
   };
 
   client = await ClientSDK.init(config);
