@@ -5,6 +5,10 @@ import { Hotspot, BrandCheckResult } from "@/src/app/smartspot/types";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: "AI not configured" }, { status: 503 });
+  }
+
   const { hotspots, brandContext } = (await req.json()) as {
     hotspots: Hotspot[];
     brandContext?: string;
@@ -14,7 +18,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ results: [] });
   }
 
-  const hotspotSummary = hotspots
+  // Cap to avoid exceeding token budget
+  const capped = hotspots.slice(0, 20);
+
+  const hotspotSummary = capped
     .map(
       (h) =>
         `ID: ${h.id}\n  Label: "${h.label}"\n  Description: "${h.description}"\n  Aria-label: "${h.ariaLabel}"\n  Link text: "${h.link.text}"`
@@ -28,7 +35,7 @@ export async function POST(req: NextRequest) {
   try {
     const message = await anthropic.messages.create({
       model: "claude-opus-4-6",
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [
         {
           role: "user",

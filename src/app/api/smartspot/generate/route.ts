@@ -4,6 +4,10 @@ import Anthropic from "@anthropic-ai/sdk";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: "AI not configured" }, { status: 503 });
+  }
+
   const { label, context, brandContext } = (await req.json()) as {
     label: string;
     context?: string;
@@ -13,6 +17,9 @@ export async function POST(req: NextRequest) {
   if (!label) {
     return NextResponse.json({ error: "label is required" }, { status: 400 });
   }
+
+  // Sanitise label to prevent prompt injection
+  const safeLabel = label.replace(/[<>]/g, "").slice(0, 200);
 
   const brandSection = brandContext
     ? `\n\nYou MUST follow these brand guidelines when writing:\n${brandContext}`
@@ -25,13 +32,13 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "user",
-          content: `You are a brand copywriter for a Sitecore CMS website. Write a concise, engaging hotspot description (2–3 sentences, maximum 160 characters) for an interactive image hotspot labeled "${label}".${context ? ` The page or component context is: "${context}".` : ""}${brandSection} The copy must be clear, benefit-led, and accessible. Return only the description text — no quotes, no bullet points, no extra formatting.`,
+          content: `You are a brand copywriter for a Sitecore CMS website. Write a concise, engaging hotspot description (2–3 sentences, maximum 160 characters) for an interactive image hotspot labeled <label>${safeLabel}</label>.${context ? ` The page or component context is: "${context}".` : ""}${brandSection} The copy must be clear, benefit-led, and accessible. Return only the description text — no quotes, no bullet points, no extra formatting.`,
         },
       ],
     });
 
-    const description =
-      message.content[0].type === "text" ? message.content[0].text.trim() : "";
+    const raw = message.content[0].type === "text" ? message.content[0].text.trim() : "";
+    const description = raw.length > 160 ? raw.slice(0, 157) + "…" : raw;
 
     return NextResponse.json({ description });
   } catch (err) {

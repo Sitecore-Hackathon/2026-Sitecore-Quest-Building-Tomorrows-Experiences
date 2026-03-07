@@ -87,9 +87,15 @@ export function HotspotCanvas({
     setDraggingId(null);
   }, []);
 
+  // Release drag even when mouse is released outside the canvas
+  useEffect(() => {
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => window.removeEventListener("mouseup", handleMouseUp);
+  }, [handleMouseUp]);
+
   if (!imageUrl) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-[#1a1a2e] rounded-lg border-2 border-dashed border-[#333] text-[#555] text-sm gap-2.5 min-h-[400px]">
+      <div className="flex-1 flex flex-col items-center justify-center bg-[#1a1a2e] rounded-lg border-2 border-dashed border-[#333] text-[#555] text-sm gap-2.5 min-h-100">
         <div className="text-[40px]">🖼️</div>
         <div className="font-semibold text-[#666]">No image loaded</div>
         <div className="text-xs">Paste an image URL in the toolbar above</div>
@@ -101,7 +107,7 @@ export function HotspotCanvas({
     <div
       ref={containerRef}
       className={cn(
-        "flex-1 relative overflow-hidden bg-black rounded-lg border border-border select-none min-h-[400px] self-start",
+        "flex-1 relative overflow-hidden bg-black rounded-lg border border-border select-none min-h-100 self-start",
         draggingId ? "cursor-grabbing" : "cursor-crosshair"
       )}
       onClick={handleCanvasClick}
@@ -110,7 +116,7 @@ export function HotspotCanvas({
       onMouseLeave={handleMouseUp}
     >
       {imageError ? (
-        <div className="min-h-[400px] flex flex-col items-center justify-center bg-[#1a1a2e] text-red-500 gap-2 text-sm">
+        <div className="min-h-100 flex flex-col items-center justify-center bg-[#1a1a2e] text-red-500 gap-2 text-sm">
           <div className="text-[36px]">⚠️</div>
           <div>Could not load image</div>
           <div className="text-[#888] text-xs">Check the URL and try again</div>
@@ -148,7 +154,7 @@ export function HotspotCanvas({
                 }
               }}
               className={cn(
-                "absolute -translate-x-1/2 -translate-y-1/2 w-[34px] h-[34px] rounded-full cursor-grab flex items-center justify-center text-white font-bold transition-shadow duration-150 outline-none",
+                "absolute -translate-x-1/2 -translate-y-1/2 w-8.5 h-8.5 rounded-full cursor-grab flex items-center justify-center text-white font-bold transition-shadow duration-150 outline-none",
                 isSelected ? "border-[3px] border-white z-20" : "border-2 border-white/50 z-10",
                 hotspot.iconStyle === "info" ? "text-xs italic" : "text-[15px] not-italic"
               )}
@@ -163,10 +169,11 @@ export function HotspotCanvas({
             >
               {ICON_GLYPHS[hotspot.iconStyle] ?? ICON_GLYPHS.circle}
 
-              {/* Tooltip label — visible on hover or selection */}
+              {/* Tooltip label — flips below pin when near the top edge */}
               <div
                 className={cn(
-                  "absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 bg-black/90 text-white py-1 px-2.5 rounded text-[11px] font-medium whitespace-nowrap pointer-events-none transition-opacity duration-150 not-italic shadow-[0_2px_8px_rgba(0,0,0,0.4)]",
+                  "absolute left-1/2 -translate-x-1/2 bg-black/90 text-white py-1 px-2.5 rounded text-2xs font-medium whitespace-nowrap pointer-events-none transition-opacity duration-150 not-italic shadow-[0_2px_8px_rgba(0,0,0,0.4)]",
+                  hotspot.y < 15 ? "top-[calc(100%+8px)]" : "bottom-[calc(100%+8px)]",
                   showTooltip ? "opacity-100" : "opacity-0"
                 )}
               >
@@ -178,7 +185,7 @@ export function HotspotCanvas({
 
       {/* Empty-state hint */}
       {imageLoaded && hotspots.length === 0 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/75 text-gray-300 py-2 px-[18px] rounded-[20px] text-xs pointer-events-none whitespace-nowrap">
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/75 text-gray-300 py-2 px-4.5 rounded-[20px] text-xs pointer-events-none whitespace-nowrap">
           Click anywhere on the image to place a hotspot
         </div>
       )}

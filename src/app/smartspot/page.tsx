@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useMarketplaceClient } from "@/src/utils/hooks/useMarketplaceClient";
 import type { ApplicationContext } from "@sitecore-marketplace-sdk/client";
-import { Hotspot, SmartSpotData, BrandCheckResult, AIDetectedSpot } from "./types";
+import { Hotspot, SmartSpotData, BrandCheckResult, AIDetectedSpot, Breakpoint, ImageVariant } from "./types";
 import { HotspotCanvas } from "./components/HotspotCanvas";
 import { HotspotPanel } from "./components/HotspotPanel";
 import { fetchBrandKit, BrandKitContext } from "./utils/brandKit";
@@ -13,7 +13,7 @@ import { Input } from "@/src/components/ui/input";
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function generateId(): string {
-  return `hs_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  return `hs_${crypto.randomUUID()}`;
 }
 
 function makeHotspot(x: number, y: number): Hotspot {
@@ -30,20 +30,59 @@ function makeHotspot(x: number, y: number): Hotspot {
   };
 }
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const MARKETPLACE_OPTIONS = { retryAttempts: 1 };
+
+const BREAKPOINTS: { key: Breakpoint; label: string; icon: string }[] = [
+  { key: "desktop", label: "Desktop", icon: "🖥" },
+  { key: "tablet", label: "Tablet", icon: "⬜" },
+  { key: "mobile", label: "Mobile", icon: "📱" },
+];
+
+const emptyVariant = (): ImageVariant => ({ imageUrl: "", hotspots: [] });
+const emptyVariants = (): Record<Breakpoint, ImageVariant> => ({
+  desktop: emptyVariant(),
+  tablet: emptyVariant(),
+  mobile: emptyVariant(),
+});
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function SmartSpotPage() {
-  const { client, isInitialized, isLoading: sdkLoading, error } = useMarketplaceClient({ retryAttempts: 1 });
+  const { client, isInitialized, isLoading: sdkLoading, error } = useMarketplaceClient(MARKETPLACE_OPTIONS);
   const [appContext, setAppContext] = useState<ApplicationContext>();
   const [brandKit, setBrandKit] = useState<BrandKitContext | null>(null);
 
-  const [imageUrl, setImageUrl] = useState("");
-  const [hotspots, setHotspots] = useState<Hotspot[]>([]);
+  const [activeBreakpoint, setActiveBreakpoint] = useState<Breakpoint>("desktop");
+  const [variants, setVariants] = useState<Record<Breakpoint, ImageVariant>>(emptyVariants());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [brandCheckResults, setBrandCheckResults] = useState<BrandCheckResult[]>([]);
 
+  // Derived from active breakpoint
+  const imageUrl = variants[activeBreakpoint].imageUrl;
+  const hotspots = variants[activeBreakpoint].hotspots;
+
+  const setImageUrl = useCallback((url: string) =>
+    setVariants((prev) => ({
+      ...prev,
+      [activeBreakpoint]: { ...prev[activeBreakpoint], imageUrl: url },
+    })), [activeBreakpoint]);
+
+  const setHotspots = useCallback(
+    (updater: Hotspot[] | ((prev: Hotspot[]) => Hotspot[])) =>
+      setVariants((prev) => {
+        const current = prev[activeBreakpoint].hotspots;
+        const next = typeof updater === "function" ? updater(current) : updater;
+        return { ...prev, [activeBreakpoint]: { ...prev[activeBreakpoint], hotspots: next } };
+      }),
+    [activeBreakpoint]
+  );
+
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [isBrandChecking, setIsBrandChecking] = useState(false);
+  const [brandCheckError, setBrandCheckError] = useState<string | null>(null);
   const [isAutoDetecting, setIsAutoDetecting] = useState(false);
   const [autoDetectError, setAutoDetectError] = useState<string | null>(null);
   const [autoDetectCount, setAutoDetectCount] = useState<number | null>(null);
@@ -63,8 +102,14 @@ export default function SmartSpotPage() {
           if (!value) return;
           try {
             const data = JSON.parse(value) as SmartSpotData;
-            setImageUrl(data.imageUrl ?? "");
-            setHotspots(data.hotspots ?? []);
+            // version 1: multi-breakpoint variants shape
+            if (data.variants) {
+              setVariants({
+                desktop: data.variants.desktop ?? emptyVariant(),
+                tablet: data.variants.tablet ?? emptyVariant(),
+                mobile: data.variants.mobile ?? emptyVariant(),
+              });
+            }
           } catch {
             // Field value is not SmartSpot JSON — start fresh
           }
@@ -75,7 +120,11 @@ export default function SmartSpotPage() {
       client
         .query("application.context")
         .then((res) => {
-          setAppContext(res.data as ApplicationContext);
+          const ctx = res.data as ApplicationContext;
+          if (ctx.type && ctx.type !== "custom-field-extension") {
+            console.warn(`SmartSpot: unexpected extension type "${ctx.type}" — expected "custom-field-extension"`);
+          }
+          setAppContext(ctx);
         })
         .catch((err) => console.error("Error retrieving application.context:", err));
 
@@ -116,25 +165,25 @@ export default function SmartSpotPage() {
     const spot = makeHotspot(x, y);
     setHotspots((prev) => [...prev, spot]);
     setSelectedId(spot.id);
-  }, []);
+  }, [setHotspots]);
 
   const handleMove = useCallback((id: string, x: number, y: number) => {
     setHotspots((prev) =>
       prev.map((h) => (h.id === id ? { ...h, x, y } : h))
     );
-  }, []);
+  }, [setHotspots]);
 
   const handleUpdate = useCallback((id: string, updates: Partial<Hotspot>) => {
     setHotspots((prev) =>
       prev.map((h) => (h.id === id ? { ...h, ...updates } : h))
     );
-  }, []);
+  }, [setHotspots]);
 
   const handleDelete = useCallback((id: string) => {
     setHotspots((prev) => prev.filter((h) => h.id !== id));
     setBrandCheckResults((prev) => prev.filter((r) => r.hotspotId !== id));
     setSelectedId((prev) => (prev === id ? null : prev));
-  }, []);
+  }, [setHotspots]);
 
   // ── AI: generate description ───────────────────────────────────────────────
   const handleGenerateDescription = useCallback(
@@ -143,6 +192,7 @@ export default function SmartSpotPage() {
       if (!spot?.label) return;
 
       setIsGenerating(true);
+      setGenerateError(null);
       try {
         const res = await fetch("/api/smartspot/generate", {
           method: "POST",
@@ -154,9 +204,13 @@ export default function SmartSpotPage() {
           }),
         });
         const data = await res.json();
+        if (!res.ok || data.error) {
+          setGenerateError(data.error ?? "Generation failed");
+          return;
+        }
         handleUpdate(id, { description: data.description ?? "" });
       } catch (err) {
-        console.error("Generate description error:", err);
+        setGenerateError(err instanceof Error ? err.message : "Generation failed");
       } finally {
         setIsGenerating(false);
       }
@@ -168,6 +222,7 @@ export default function SmartSpotPage() {
   const handleBrandCheckAll = useCallback(async () => {
     if (!hotspots.length) return;
     setIsBrandChecking(true);
+    setBrandCheckError(null);
     try {
       const res = await fetch("/api/smartspot/brandcheck", {
         method: "POST",
@@ -175,9 +230,13 @@ export default function SmartSpotPage() {
         body: JSON.stringify({ hotspots, brandContext: brandKit?.summary ?? "" }),
       });
       const data = await res.json();
+      if (!res.ok || data.error) {
+        setBrandCheckError(data.error ?? "Brand check failed");
+        return;
+      }
       setBrandCheckResults(data.results ?? []);
     } catch (err) {
-      console.error("Brand check error:", err);
+      setBrandCheckError(err instanceof Error ? err.message : "Brand check failed");
     } finally {
       setIsBrandChecking(false);
     }
@@ -215,14 +274,14 @@ export default function SmartSpotPage() {
     } finally {
       setIsAutoDetecting(false);
     }
-  }, [imageUrl]);
+  }, [imageUrl, setHotspots]);
 
   // ── Save ───────────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (!client) return;
     setSaveStatus("saving");
     try {
-      const payload: SmartSpotData = { imageUrl, hotspots };
+      const payload: SmartSpotData = { version: 1, variants };
       // canvasReload: true tells Sitecore to refresh the page preview after save
       await client.setValue(JSON.stringify(payload), true);
       setSaveStatus("saved");
@@ -233,7 +292,7 @@ export default function SmartSpotPage() {
       setSaveStatus("error");
       setTimeout(() => setSaveStatus("idle"), 2500);
     }
-  }, [client, imageUrl, hotspots]);
+  }, [client, variants]);
 
   // ── Accessibility stats ────────────────────────────────────────────────────
   const withAriaLabel = hotspots.filter((h) => h.ariaLabel.trim()).length;
@@ -246,10 +305,7 @@ export default function SmartSpotPage() {
         )
       : null;
 
-  // ── Loading state ──────────────────────────────────────────────────────────
-  const isLoading = sdkLoading;
-
-  if (isLoading) {
+  if (sdkLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-muted-foreground text-sm gap-1">
         <div className="text-4xl">🎯</div>
@@ -268,15 +324,32 @@ export default function SmartSpotPage() {
           <div className="text-2xl">🎯</div>
           <div>
             <div className="font-bold text-sm tracking-tight">SmartSpot</div>
-            <div className="text-muted-foreground text- tracking-wide">AI Hotspot Editor</div>
+            <div className="text-muted-foreground text-3xs tracking-wide">AI Hotspot Editor</div>
           </div>
         </div>
 
-        {/* Image URL */}
+        {/* Breakpoint switcher */}
+        <select
+          value={activeBreakpoint}
+          onChange={(e) => {
+            setActiveBreakpoint(e.target.value as Breakpoint);
+            setSelectedId(null);
+            setBrandCheckResults([]);
+            setAutoDetectError(null);
+            setAutoDetectCount(null);
+          }}
+          className="h-9 px-2 rounded-md border border-border bg-card text-sm text-foreground cursor-pointer shrink-0"
+        >
+          {BREAKPOINTS.map(({ key, label, icon }) => (
+            <option key={key} value={key}>{icon} {label}</option>
+          ))}
+        </select>
+
+        {/* Image URL for active breakpoint */}
         <Input
           value={imageUrl}
           onChange={(e) => setImageUrl(e.target.value)}
-          placeholder="Image URL…"
+          placeholder={`${activeBreakpoint.charAt(0).toUpperCase() + activeBreakpoint.slice(1)} image URL…`}
           className="flex-1 min-w-44 h-9 text-sm"
         />
 
@@ -336,11 +409,14 @@ export default function SmartSpotPage() {
           onSelect={setSelectedId}
         />
         <HotspotPanel
+          key={activeBreakpoint}
           hotspots={hotspots}
           selectedId={selectedId}
           brandCheckResults={brandCheckResults}
           isGenerating={isGenerating}
+          generateError={generateError}
           isBrandChecking={isBrandChecking}
+          brandCheckError={brandCheckError}
           onUpdate={handleUpdate}
           onDelete={handleDelete}
           onSelect={setSelectedId}
@@ -351,6 +427,8 @@ export default function SmartSpotPage() {
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
       <div className="flex gap-3.5 px-3 py-2 bg-card rounded-md border border-border text-xs text-muted-foreground flex-wrap items-center">
+        <span className="font-semibold text-foreground capitalize">{activeBreakpoint}</span>
+        <Divider />
         <StatPill value={hotspots.length} label="hotspot" plural="hotspots" />
         <Divider />
         <StatPill value={withAriaLabel} label="with aria-label" />
@@ -379,6 +457,29 @@ export default function SmartSpotPage() {
           <>
             <Divider />
             <span className="text-yellow-600">⚠ Dev mode (SDK not connected)</span>
+            <Divider />
+            <button
+              onClick={async () => {
+                const payload = JSON.stringify({ version: 1, variants }, null, 2);
+                try {
+                  await navigator.clipboard.writeText(payload);
+                } catch {
+                  // Fallback for non-HTTPS environments
+                  const el = document.createElement("textarea");
+                  el.value = payload;
+                  el.style.position = "fixed";
+                  el.style.opacity = "0";
+                  document.body.appendChild(el);
+                  el.select();
+                  document.execCommand("copy");
+                  document.body.removeChild(el);
+                }
+              }}
+              className="text-blue-500 underline cursor-pointer text-xs"
+              title="Copy the current field JSON to clipboard"
+            >
+              📋 Copy field JSON
+            </button>
           </>
         )}
       </div>
