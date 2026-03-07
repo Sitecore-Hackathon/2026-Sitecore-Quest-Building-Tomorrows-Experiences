@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useMarketplaceClient } from "@/src/utils/hooks/useMarketplaceClient";
-import type { ApplicationContext } from "@sitecore-marketplace-sdk/client";
+import type { ApplicationContext, PagesContext } from "@sitecore-marketplace-sdk/client";
 import { Hotspot, SmartSpotData, BrandCheckResult, AIDetectedSpot, Breakpoint, ImageVariant } from "./types";
 import { HotspotCanvas } from "./components/HotspotCanvas";
 import { HotspotPanel } from "./components/HotspotPanel";
 import { fetchBrandKit, BrandKitContext } from "./utils/brandKit";
+import { fetchClaudeApiKey } from "./utils/claudeApiKey";
 import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 
@@ -52,7 +53,10 @@ const emptyVariants = (): Record<Breakpoint, ImageVariant> => ({
 export default function SmartSpotPage() {
   const { client, isInitialized, isLoading: sdkLoading, error } = useMarketplaceClient(MARKETPLACE_OPTIONS);
   const [appContext, setAppContext] = useState<ApplicationContext>();
+  const [pagesContext, setPagesContext] = useState<PagesContext>();
   const [brandKit, setBrandKit] = useState<BrandKitContext | null>(null);
+  const [claudeApiKey, setClaudeApiKey] = useState<string>("");
+  const [isApiKeyLoading, setIsApiKeyLoading] = useState<boolean>(true);
 
   const [activeBreakpoint, setActiveBreakpoint] = useState<Breakpoint>("desktop");
   const [variants, setVariants] = useState<Record<Breakpoint, ImageVariant>>(emptyVariants());
@@ -147,6 +151,9 @@ export default function SmartSpotPage() {
           },
         })
         .then((result) => {
+          const ctx = result.data as PagesContext;
+          setPagesContext(ctx);
+
           unsubPagesContext.current = result.unsubscribe;
           resolveBrandKit(result.data).catch(() => {});
         })
@@ -159,6 +166,28 @@ export default function SmartSpotPage() {
       unsubPagesContext.current?.();
     };
   }, [client, error, isInitialized]);
+
+  // Claude API key effect
+  useEffect(() => {
+    if (appContext && pagesContext && client) {
+      const site = pagesContext.siteInfo?.name;
+      const sitecoreContextId = appContext.resourceAccess?.[0]?.context.preview;
+
+      if (site && sitecoreContextId) {
+        fetchClaudeApiKey(client, sitecoreContextId, site)
+          .then((key) => {
+            setClaudeApiKey(key ?? ""); 
+            setIsApiKeyLoading(false);
+          })
+          .catch(() => {
+            setClaudeApiKey("");
+            setIsApiKeyLoading(false);
+          });
+      } else {
+        setIsApiKeyLoading(false);
+      }
+    }
+  }, [appContext, pagesContext, client]);
 
   // ── Hotspot mutations ──────────────────────────────────────────────────────
   const handleAdd = useCallback((x: number, y: number) => {
@@ -196,7 +225,10 @@ export default function SmartSpotPage() {
       try {
         const res = await fetch("/api/smartspot/generate", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json", 
+            "X-Claude-Api-Key": claudeApiKey 
+          },
           body: JSON.stringify({
             label: spot.label,
             context: appContext?.name ?? "",
@@ -226,7 +258,10 @@ export default function SmartSpotPage() {
     try {
       const res = await fetch("/api/smartspot/brandcheck", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Claude-Api-Key": claudeApiKey,
+        },
         body: JSON.stringify({ hotspots, brandContext: brandKit?.summary ?? "" }),
       });
       const data = await res.json();
@@ -251,7 +286,10 @@ export default function SmartSpotPage() {
     try {
       const res = await fetch("/api/smartspot/vision", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json", 
+          "X-Claude-Api-Key": claudeApiKey 
+        },
         body: JSON.stringify({ imageUrl }),
       });
       const data = await res.json();
@@ -305,12 +343,29 @@ export default function SmartSpotPage() {
         )
       : null;
 
-  if (sdkLoading) {
+  if (sdkLoading || isApiKeyLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background text-muted-foreground text-sm gap-1">
         <div className="text-4xl">🎯</div>
         <div className="font-semibold text-foreground">SmartSpot</div>
         <div>Initializing…</div>
+      </div>
+    );
+  }
+
+  if (!claudeApiKey) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-3.5 font-sans">
+        <div className="bg-card rounded-lg border border-destructive/20 p-6 max-w-md text-center">
+          <div className="text-4xl mb-3">⚠️</div>
+          <div className="text-lg font-bold text-destructive mb-2">Claude API Key Not Found</div>
+          <div className="text-sm text-muted-foreground mb-4">
+            The Claude API key could not be retrieved from site configuration. Please ensure the SmartSpot configuration includes a valid API key.
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Contact your site administrator if you believe this is an error.
+          </div>
+        </div>
       </div>
     );
   }
